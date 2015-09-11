@@ -3,7 +3,6 @@ package main
 import (
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"fmt"
 	"log"
 	"net"
 	"os"
@@ -20,43 +19,10 @@ import (
 
 func initPki(c *cli.Context) {
 	log.Print("generating new pki structure")
-	pkiroot := filepath.Join(c.GlobalString("root"))
-
-	for _, dir := range []string{"private", "issued"} {
-		err := os.Mkdir(filepath.Join(pkiroot, dir), 0755)
-		if err != nil {
-			log.Fatalf("creating dir %v: %v", dir, err)
-		}
-		log.Printf("created %v directory", dir)
-	}
-
-	serial, err := os.Create(filepath.Join(pkiroot, "serial"))
+	err := easyca.GeneratePKIStructure(filepath.Join(c.GlobalString("root")))
 	if err != nil {
-		log.Fatalf("create serial: %v", err)
+		log.Fatalf("generate pki structure: %v", err)
 	}
-	defer serial.Close()
-	n, err := fmt.Fprintln(serial, "01")
-	if err != nil {
-		log.Fatalf("write serial: %v", err)
-	}
-	if n == 0 {
-		log.Fatal("write serial, written 0 bytes")
-	}
-	log.Print("created serial")
-
-	crlnumber, err := os.Create(filepath.Join(pkiroot, "crlnumber"))
-	if err != nil {
-		log.Fatalf("create crlnumber: %v", err)
-	}
-	defer crlnumber.Close()
-	n, err = fmt.Fprintln(crlnumber, "01")
-	if err != nil {
-		log.Fatalf("write crlnumber: %v", err)
-	}
-	if n == 0 {
-		log.Fatal("write crlnumber, written 0 bytes")
-	}
-	log.Print("created crlnumber")
 }
 
 func createBundle(c *cli.Context) {
@@ -115,7 +81,21 @@ func createBundle(c *cli.Context) {
 	if err != nil {
 		log.Fatal(err)
 	}
-
+}
+func revoke(c *cli.Context) {
+	if !c.Args().Present() {
+		cli.ShowSubcommandHelp(c)
+		log.Fatalf("Usage: %v path/to/cert.crt", c.Command.FullName())
+	}
+	crtPath := c.Args().First()
+	crt, err := easyca.GetCertificate(crtPath)
+	if err != nil {
+		log.Fatalf("get certificate (%v): %v", crtPath, err)
+	}
+	err = easyca.RevokeSerial(c.GlobalString("root"), crt.SerialNumber)
+	if err != nil {
+		log.Fatalf("revoke serial %X: %v", crt.SerialNumber, err)
+	}
 }
 
 func parseArgs() {
@@ -136,9 +116,15 @@ func parseArgs() {
 	}
 	app.Commands = []cli.Command{
 		{
-			Name:   "init",
-			Usage:  "create directory structure",
-			Action: initPki,
+			Name:        "init",
+			Description: "create directory structure",
+			Action:      initPki,
+		},
+		{
+			Name:        "revoke",
+			Usage:       "revoke path/to/cert",
+			Description: "revoke certificate",
+			Action:      revoke,
 		},
 		{
 			Name:        "create",
