@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"crypto/sha1"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/asn1"
 	"encoding/pem"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -98,7 +100,7 @@ func GenerateCertifcate(pkiroot, name string, template *x509.Certificate) error 
 		caKey = privateKey
 	} else {
 		template.KeyUsage = x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment
-		serialNumber, err := NextSerial(pkiroot)
+		serialNumber, err := NextNumber(pkiroot, "serial")
 		if err != nil {
 			return fmt.Errorf("get next serial: %v", err)
 		}
@@ -169,6 +171,79 @@ func GetCA(pkiroot string) (*x509.Certificate, *rsa.PrivateKey, error) {
 	return caCrt, caKey, nil
 }
 
+func GenCRL(pkiroot string, expire int) error {
+	var revokedCerts []pkix.RevokedCertificate
+	f, err := os.Open(filepath.Join(pkiroot, "index.txt"))
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		matches := indexRegexp.FindStringSubmatch(scanner.Text())
+		if len(matches) != 7 {
+			return fmt.Errorf("wrong line format %v elems: %v, %v", len(matches), matches, scanner.Text())
+		}
+		if matches[1] == "R" {
+			crt, err := GetCertificate(filepath.Join(pkiroot, "issued", matches[5]))
+			if err != nil {
+				return fmt.Errorf("get certificate %v: %v", matches[5], err)
+			}
+
+			matchedSerial := big.NewInt(0)
+			fmt.Sscanf(matches[4], "%X", matchedSerial)
+			if matchedSerial.Cmp(crt.SerialNumber) != 0 {
+				return fmt.Errorf("serial in index does not match revoked certificate: %v", matches[0])
+			}
+			revocationTime, err := time.Parse("060102150405", strings.TrimSuffix(matches[3], "Z"))
+			if err != nil {
+				return fmt.Errorf("parse revocation time: %v", err)
+			}
+			revokedCerts = append(revokedCerts, pkix.RevokedCertificate{
+				SerialNumber:   crt.SerialNumber,
+				RevocationTime: revocationTime,
+				Extensions:     crt.Extensions,
+			})
+		}
+	}
+	caCrt, caKey, err := GetCA(pkiroot)
+	if err != nil {
+		return fmt.Errorf("get ca: %v", err)
+	}
+	crl, err := caCrt.CreateCRL(rand.Reader, caKey, revokedCerts, time.Now(), time.Now().AddDate(0, 0, expire))
+	if err != nil {
+		return fmt.Errorf("create crl: %v", err)
+	}
+	// I do no see where we can pass it to CreateCRL, differs from openssl
+	crlNumber, err := NextNumber(pkiroot, "crlnumber")
+	if err != nil {
+		return fmt.Errorf("get next serial: %v", err)
+	}
+
+	serialHexa := fmt.Sprintf("%X", crlNumber)
+	if len(serialHexa)%2 == 1 {
+		serialHexa = "0" + serialHexa
+	}
+
+	crlPath := filepath.Join(pkiroot, "crl-"+serialHexa+".pem")
+	crlFile, err := os.Create(crlPath)
+	if err != nil {
+		return fmt.Errorf("create %v: %v", crlPath, err)
+	}
+	defer crlFile.Close()
+
+	err = pem.Encode(crlFile, &pem.Block{
+		Type:  "X509 CRL",
+		Bytes: crl,
+	})
+	if err != nil {
+		return fmt.Errorf("pem encode crt: %v", err)
+	}
+
+	return nil
+}
+
 func RevokeSerial(pkiroot string, serial *big.Int) error {
 	f, err := os.OpenFile(filepath.Join(pkiroot, "index.txt"), os.O_RDWR, 0644)
 	if err != nil {
@@ -188,6 +263,8 @@ func RevokeSerial(pkiroot string, serial *big.Int) error {
 		if matchedSerial.Cmp(serial) == 0 {
 			if matches[1] == "R" {
 				return fmt.Errorf("certificate already revoked")
+			} else if matches[1] == "E" {
+				return fmt.Errorf("certificate already expired")
 			}
 
 			lines = append(lines, fmt.Sprintf("R\t%v\t%vZ\t%v\t%v\t%v",

@@ -19,8 +19,7 @@ import (
 
 func initPki(c *cli.Context) {
 	log.Print("generating new pki structure")
-	err := easyca.GeneratePKIStructure(filepath.Join(c.GlobalString("root")))
-	if err != nil {
+	if err := easyca.GeneratePKIStructure(c.GlobalString("root")); err != nil {
 		log.Fatalf("generate pki structure: %v", err)
 	}
 }
@@ -98,6 +97,12 @@ func revoke(c *cli.Context) {
 	}
 }
 
+func gencrl(c *cli.Context) {
+	if err := easyca.GenCRL(c.GlobalString("root"), c.Int("expire")); err != nil {
+		log.Fatalf("general crl: %v", err)
+	}
+}
+
 func parseArgs() {
 	app := cli.NewApp()
 	app.Name = "easypki"
@@ -125,6 +130,18 @@ func parseArgs() {
 			Usage:       "revoke path/to/cert",
 			Description: "revoke certificate",
 			Action:      revoke,
+		},
+		{
+			Name:        "gencrl",
+			Description: "generate certificate revocation list",
+			Action:      gencrl,
+			Flags: []cli.Flag{
+				cli.IntFlag{
+					Name:  "expire",
+					Usage: "expiration limit in days",
+					Value: 30,
+				},
+			},
 		},
 		{
 			Name:        "create",

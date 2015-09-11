@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 )
 
-func NextSerial(pkiroot string) (*big.Int, error) {
+func NextNumber(pkiroot, name string) (*big.Int, error) {
 	serial := big.NewInt(0)
 
-	f, err := os.OpenFile(filepath.Join(pkiroot, "serial"), os.O_RDWR, 0644)
+	f, err := os.OpenFile(filepath.Join(pkiroot, name), os.O_RDWR, 0644)
 	if err != nil {
 		return nil, err
 	}
