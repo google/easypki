@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"fmt"
 	"log"
 	"net"
 	"os"
@@ -19,10 +20,43 @@ import (
 
 func initPki(c *cli.Context) {
 	log.Print("generating new pki structure")
-	err := os.MkdirAll(filepath.Join(c.GlobalString("root"), "private"), 0755)
-	if err != nil {
-		log.Fatalf("creating pki structure %v", err)
+	pkiroot := filepath.Join(c.GlobalString("root"))
+
+	for _, dir := range []string{"private", "issued"} {
+		err := os.Mkdir(filepath.Join(pkiroot, dir), 0755)
+		if err != nil {
+			log.Fatalf("creating dir %v: %v", dir, err)
+		}
+		log.Printf("created %v directory", dir)
 	}
+
+	serial, err := os.Create(filepath.Join(pkiroot, "serial"))
+	if err != nil {
+		log.Fatalf("create serial: %v", err)
+	}
+	defer serial.Close()
+	n, err := fmt.Fprintln(serial, "01")
+	if err != nil {
+		log.Fatalf("write serial: %v", err)
+	}
+	if n == 0 {
+		log.Fatal("write serial, written 0 bytes")
+	}
+	log.Print("created serial")
+
+	crlnumber, err := os.Create(filepath.Join(pkiroot, "crlnumber"))
+	if err != nil {
+		log.Fatalf("create crlnumber: %v", err)
+	}
+	defer crlnumber.Close()
+	n, err = fmt.Fprintln(crlnumber, "01")
+	if err != nil {
+		log.Fatalf("write crlnumber: %v", err)
+	}
+	if n == 0 {
+		log.Fatal("write crlnumber, written 0 bytes")
+	}
+	log.Print("created crlnumber")
 }
 
 func createBundle(c *cli.Context) {
@@ -32,24 +66,29 @@ func createBundle(c *cli.Context) {
 			"different name if you need multiple certs for same cn)", c.Command.FullName())
 	}
 
-	var filename string
 	commonName := strings.Join(c.Args()[:], " ")
-
-	if len(c.String("filename")) > 0 {
-		filename = c.String("filename")
-	} else {
+	var filename string
+	if filename = c.String("filename"); len(filename) == 0 {
 		filename = strings.Replace(commonName, " ", "_", -1)
 		filename = strings.Replace(filename, "*", "wildcard", -1)
 	}
 
+	subject := pkix.Name{CommonName: commonName}
+	if str := c.String("organization"); len(str) > 0 {
+		subject.Organization = []string{str}
+	}
+	if str := c.String("locality"); len(str) > 0 {
+		subject.Locality = []string{str}
+	}
+	if str := c.String("country"); len(str) > 0 {
+		subject.Country = []string{str}
+	}
+	if str := c.String("province"); len(str) > 0 {
+		subject.Province = []string{str}
+	}
+
 	template := &x509.Certificate{
-		Subject: pkix.Name{
-			CommonName:   commonName,
-			Organization: c.StringSlice("organization"),
-			Locality:     c.StringSlice("locality"),
-			Country:      c.StringSlice("country"),
-			Province:     c.StringSlice("province"),
-		},
+		Subject:  subject,
 		NotAfter: time.Now().AddDate(0, 0, c.Int("expire")),
 	}
 
@@ -76,6 +115,7 @@ func createBundle(c *cli.Context) {
 	if err != nil {
 		log.Fatal(err)
 	}
+
 }
 
 func parseArgs() {
@@ -123,20 +163,20 @@ func parseArgs() {
 					Name:  "filename",
 					Usage: "filename for bundle, use when you generate multiple certs for same cn",
 				},
-				cli.StringSliceFlag{
+				cli.StringFlag{
 					Name:   "organization",
 					EnvVar: "PKI_ORGANIZATION",
 				},
-				cli.StringSliceFlag{
+				cli.StringFlag{
 					Name:   "locality",
 					EnvVar: "PKI_LOCALITY",
 				},
-				cli.StringSliceFlag{
+				cli.StringFlag{
 					Name:   "country",
 					EnvVar: "PKI_COUNTRY",
 					Usage:  "Country name, 2 letter code",
 				},
-				cli.StringSliceFlag{
+				cli.StringFlag{
 					Name:   "province",
 					Usage:  "province/state",
 					EnvVar: "PKI_PROVINCE",

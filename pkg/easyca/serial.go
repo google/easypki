@@ -2,43 +2,44 @@ package easyca
 
 import (
 	"fmt"
-	"io/ioutil"
+	"math/big"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 )
 
-func NextSerial(pkiroot string) (int64, error) {
-	var serial int64
-	f, err := os.OpenFile(filepath.Join(pkiroot, "serial"), os.O_RDWR|os.O_CREATE, 0644)
+func NextSerial(pkiroot string) (*big.Int, error) {
+	serial := big.NewInt(0)
+
+	f, err := os.OpenFile(filepath.Join(pkiroot, "serial"), os.O_RDWR, 0644)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	defer f.Close()
-	out, err := ioutil.ReadAll(f)
+
+	n, err := fmt.Fscanf(f, "%X\n", serial)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	if len(out) == 0 {
-		serial = 1
-	} else {
-		// If serial file is edited manually, it will probably get \n or \r\n
-		// We make sure to clean the unwanted characters
-		serial, err = strconv.ParseInt(strings.TrimSpace(string(out)), 10, 64)
-		if err != nil {
-			return 0, err
-		}
-		serial += 1
+	if n != 1 {
+		return nil, fmt.Errorf("supposed to read 1 element, read: %v", n)
 	}
 
-	f.Seek(0, 0)
-	written, err := fmt.Fprint(f, serial)
-	if err != nil {
-		return 0, err
+	next := big.NewInt(1)
+	next.Add(serial, next)
+	output := fmt.Sprintf("%X", next)
+	// For compatibility with openssl we need an even length
+	if len(output)%2 == 1 {
+		output = "0" + output
 	}
-	if written == 0 {
-		return 0, fmt.Errorf("wanted to write %s to serial file, no byte written", written)
+	f.Truncate(0)
+	f.Seek(0, 0)
+
+	n, err = fmt.Fprintln(f, output)
+	if err != nil {
+		return nil, err
+	}
+	if n == 0 {
+		return nil, fmt.Errorf("supposed to write 1 element, written: %v", n)
 	}
 
 	return serial, nil

@@ -83,7 +83,7 @@ func GenerateCertifcate(pkiroot, name string, template *x509.Certificate) error 
 		if err != nil {
 			return fmt.Errorf("get next serial: %v", err)
 		}
-		template.SerialNumber = big.NewInt(serialNumber)
+		template.SerialNumber = serialNumber
 
 		caCrt, caKey, err = GetCA(pkiroot)
 		if err != nil {
@@ -110,6 +110,13 @@ func GenerateCertifcate(pkiroot, name string, template *x509.Certificate) error 
 		return fmt.Errorf("pem encode crt: %v", err)
 	}
 
+	// I do not think we have to write the ca.crt in the index
+	if !template.IsCA {
+		WriteIndex(pkiroot, name, template)
+		if err != nil {
+			return fmt.Errorf("write index: %v", err)
+		}
+	}
 	return nil
 }
 
@@ -126,6 +133,7 @@ func GetCA(pkiroot string) (*x509.Certificate, *rsa.PrivateKey, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("parse ca private key: %v", err)
 	}
+
 	caCrtBytes, err := ioutil.ReadFile(filepath.Join(pkiroot, "ca.crt"))
 	if err != nil {
 		return nil, nil, fmt.Errorf("read ca crt: %v", err)
@@ -138,5 +146,35 @@ func GetCA(pkiroot string) (*x509.Certificate, *rsa.PrivateKey, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("parse ca crt: %v", err)
 	}
+
 	return caCrt, caKey, nil
+}
+
+func WriteIndex(pkiroot, filename string, crt *x509.Certificate) error {
+	f, err := os.OpenFile(filepath.Join(pkiroot, "index.txt"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	serialOutput := fmt.Sprintf("%X", crt.SerialNumber)
+	// For compatibility with openssl we need an even length
+	if len(serialOutput)%2 == 1 {
+		serialOutput = "0" + serialOutput
+	}
+
+	// Date format: yymmddHHMMSSZ
+	// E|R|V<tab>Expiry<tab>[RevocationDate]<tab>Serial<tab>filename<tab>SubjectDN
+	n, err := fmt.Fprintf(f, "V\t%vZ\t\t%v\t%v.crt\t%v\n",
+		crt.NotAfter.UTC().Format("060102150405"),
+		serialOutput,
+		filename,
+		"/CN="+crt.Subject.CommonName)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("written 0 bytes in index file")
+	}
+	return nil
 }
