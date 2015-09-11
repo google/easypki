@@ -51,6 +51,9 @@ func createBundle(c *cli.Context) {
 	if str := c.String("province"); len(str) > 0 {
 		subject.Province = []string{str}
 	}
+	if str := c.String("organizational-unit"); len(str) > 0 {
+		subject.OrganizationalUnit = []string{str}
+	}
 
 	template := &x509.Certificate{
 		Subject:  subject,
@@ -169,6 +172,10 @@ func parseArgs() {
 				cli.StringFlag{
 					Name:   "organization",
 					EnvVar: "PKI_ORGANIZATION",
+				},
+				cli.StringFlag{
+					Name:   "organizational-unit",
+					EnvVar: "PKI_ORGANIZATIONAL_UNIT",
 				},
 				cli.StringFlag{
 					Name:   "locality",

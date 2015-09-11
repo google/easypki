@@ -322,14 +322,32 @@ func WriteIndex(pkiroot, filename string, crt *x509.Certificate) error {
 	if len(serialOutput)%2 == 1 {
 		serialOutput = "0" + serialOutput
 	}
-	// subject: /C=FR/ST=IDF/O=Umbrella Corporation/CN=test.clerc.io
+
 	// Date format: yymmddHHMMSSZ
 	// E|R|V<tab>Expiry<tab>[RevocationDate]<tab>Serial<tab>filename<tab>SubjectDN
+	var subject string
+	if strs := crt.Subject.Country; len(strs) == 1 {
+		subject += "/C=" + strs[0]
+	}
+	if strs := crt.Subject.Organization; len(strs) == 1 {
+		subject += "/O=" + strs[0]
+	}
+	if strs := crt.Subject.OrganizationalUnit; len(strs) == 1 {
+		subject += "/OU=" + strs[0]
+	}
+	if strs := crt.Subject.Locality; len(strs) == 1 {
+		subject += "/L=" + strs[0]
+	}
+	if strs := crt.Subject.Province; len(strs) == 1 {
+		subject += "/ST=" + strs[0]
+	}
+	subject += "/CN=" + crt.Subject.CommonName
+
 	n, err := fmt.Fprintf(f, "V\t%vZ\t\t%v\t%v.crt\t%v\n",
 		crt.NotAfter.UTC().Format("060102150405"),
 		serialOutput,
 		filename,
-		"/CN="+crt.Subject.CommonName)
+		subject)
 	if err != nil {
 		return err
 	}
