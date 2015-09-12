@@ -185,27 +185,29 @@ func GenCRL(pkiroot string, expire int) error {
 		if len(matches) != 7 {
 			return fmt.Errorf("wrong line format %v elems: %v, %v", len(matches), matches, scanner.Text())
 		}
-		if matches[1] == "R" {
-			crt, err := GetCertificate(filepath.Join(pkiroot, "issued", matches[5]))
-			if err != nil {
-				return fmt.Errorf("get certificate %v: %v", matches[5], err)
-			}
-
-			matchedSerial := big.NewInt(0)
-			fmt.Sscanf(matches[4], "%X", matchedSerial)
-			if matchedSerial.Cmp(crt.SerialNumber) != 0 {
-				return fmt.Errorf("serial in index does not match revoked certificate: %v", matches[0])
-			}
-			revocationTime, err := time.Parse("060102150405", strings.TrimSuffix(matches[3], "Z"))
-			if err != nil {
-				return fmt.Errorf("parse revocation time: %v", err)
-			}
-			revokedCerts = append(revokedCerts, pkix.RevokedCertificate{
-				SerialNumber:   crt.SerialNumber,
-				RevocationTime: revocationTime,
-				Extensions:     crt.Extensions,
-			})
+		if matches[1] != "R" {
+			continue
 		}
+
+		crt, err := GetCertificate(filepath.Join(pkiroot, "issued", matches[5]))
+		if err != nil {
+			return fmt.Errorf("get certificate %v: %v", matches[5], err)
+		}
+
+		matchedSerial := big.NewInt(0)
+		fmt.Sscanf(matches[4], "%X", matchedSerial)
+		if matchedSerial.Cmp(crt.SerialNumber) != 0 {
+			return fmt.Errorf("serial in index does not match revoked certificate: %v", matches[0])
+		}
+		revocationTime, err := time.Parse("060102150405", strings.TrimSuffix(matches[3], "Z"))
+		if err != nil {
+			return fmt.Errorf("parse revocation time: %v", err)
+		}
+		revokedCerts = append(revokedCerts, pkix.RevokedCertificate{
+			SerialNumber:   crt.SerialNumber,
+			RevocationTime: revocationTime,
+			Extensions:     crt.Extensions,
+		})
 	}
 	caCrt, caKey, err := GetCA(pkiroot)
 	if err != nil {
@@ -387,7 +389,7 @@ func GeneratePKIStructure(pkiroot string) error {
 		{Name: "index.txt.attr", Content: "unique_subject = no"},
 	}
 	for _, f := range files {
-		// if using := here i get needs identifier, hm ?
+		// if using := here i get needs identifier, hm ?, needs to declare err before
 		var err error
 		f.File, err = os.Create(filepath.Join(pkiroot, f.Name))
 		if err != nil {
