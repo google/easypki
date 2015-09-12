@@ -376,50 +376,38 @@ func GeneratePKIStructure(pkiroot string) error {
 		}
 	}
 
-	serial, err := os.Create(filepath.Join(pkiroot, "serial"))
-	if err != nil {
-		return fmt.Errorf("create serial: %v", err)
+	files := []struct {
+		Name    string
+		Content string
+		File    *os.File
+	}{
+		{Name: "serial", Content: "01"},
+		{Name: "crlnumber", Content: "01"},
+		{Name: "index.txt", Content: ""},
+		{Name: "index.txt.attr", Content: "unique_subject = no"},
 	}
-	defer serial.Close()
-	n, err := fmt.Fprintln(serial, "01")
-	if err != nil {
-		return fmt.Errorf("write serial: %v", err)
-	}
-	if n == 0 {
-		return fmt.Errorf("write serial, written 0 bytes")
+	for _, f := range files {
+		// if using := here i get needs identifier, hm ?
+		var err error
+		f.File, err = os.Create(filepath.Join(pkiroot, f.Name))
+		if err != nil {
+			return fmt.Errorf("create %v: %v", f.Name, err)
+		}
+		defer f.File.Close()
+
+		if len(f.Content) == 0 {
+			continue
+		}
+
+		n, err := fmt.Fprintln(f.File, f.Content)
+		if err != nil {
+			return fmt.Errorf("write %v: %v", f.Name, err)
+		}
+		if n == 0 {
+			return fmt.Errorf("write %v, written 0 bytes", f.Name)
+		}
 	}
 
-	crlnumber, err := os.Create(filepath.Join(pkiroot, "crlnumber"))
-	if err != nil {
-		return fmt.Errorf("create crlnumber: %v", err)
-	}
-	defer crlnumber.Close()
-	n, err = fmt.Fprintln(crlnumber, "01")
-	if err != nil {
-		return fmt.Errorf("write crlnumber: %v", err)
-	}
-	if n == 0 {
-		return fmt.Errorf("write crlnumber, written 0 bytes")
-	}
-
-	index, err := os.Create(filepath.Join(pkiroot, "index.txt"))
-	if err != nil {
-		return fmt.Errorf("create index: %v", err)
-	}
-	defer index.Close()
-
-	indexattr, err := os.Create(filepath.Join(pkiroot, "index.txt.attr"))
-	if err != nil {
-		return fmt.Errorf("create index.txt.attr: %v", err)
-	}
-	defer indexattr.Close()
-	n, err = fmt.Fprintln(indexattr, "unique_subject = no")
-	if err != nil {
-		return fmt.Errorf("write index.txt.attr: %v", err)
-	}
-	if n == 0 {
-		return fmt.Errorf("write index.txt.attr, written 0 bytes")
-	}
 	return nil
 }
 
