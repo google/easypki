@@ -33,6 +33,7 @@ easypki init
 ```
 
 Args passed to create make the Common Name, here: "Umbrella Corp Global Authority"
+
 ```
 easypki create --ca Umbrella Corp Global Authority
 ```
@@ -40,11 +41,13 @@ easypki create --ca Umbrella Corp Global Authority
 Then you can choose between server and client certificate, by default server is implied, to generate a client certificate add `--client`
 
 Generate a wildcard certificate for your web apps:
+
 ```
 easypki create --dns "*.umbrella.com" *.umbrella.com
 ```
 
 Another example, a certificate for wiki and www:
+
 ```
 easypki create --dns "www.umbrella.com" --dns "wiki.umbrella.com"  www.umbrella.com
 ```
