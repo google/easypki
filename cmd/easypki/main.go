@@ -25,7 +25,7 @@ import (
 	"time"
 
 	"github.com/codegangsta/cli"
-	"github.com/jeremy-clerc/easyca/pkg/easyca"
+	"github.com/jeremy-clerc/easypki/pkg/easypki"
 )
 
 // https://access.redhat.com/documentation/en-US/Red_Hat_Certificate_System/8.0/html/Admin_Guide/Standard_X.509_v3_Certificate_Extensions.html
@@ -33,7 +33,7 @@ import (
 
 func initPki(c *cli.Context) {
 	log.Print("generating new pki structure")
-	if err := easyca.GeneratePKIStructure(c.GlobalString("root")); err != nil {
+	if err := easypki.GeneratePKIStructure(c.GlobalString("root")); err != nil {
 		log.Fatalf("generate pki structure: %v", err)
 	}
 }
@@ -93,7 +93,7 @@ func createBundle(c *cli.Context) {
 		template.IPAddresses = IPs
 		template.DNSNames = c.StringSlice("dns")
 	}
-	err := easyca.GenerateCertifcate(c.GlobalString("root"), filename, template)
+	err := easypki.GenerateCertifcate(c.GlobalString("root"), filename, template)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -104,18 +104,18 @@ func revoke(c *cli.Context) {
 		log.Fatalf("Usage: %v path/to/cert.crt", c.Command.FullName())
 	}
 	crtPath := c.Args().First()
-	crt, err := easyca.GetCertificate(crtPath)
+	crt, err := easypki.GetCertificate(crtPath)
 	if err != nil {
 		log.Fatalf("get certificate (%v): %v", crtPath, err)
 	}
-	err = easyca.RevokeSerial(c.GlobalString("root"), crt.SerialNumber)
+	err = easypki.RevokeSerial(c.GlobalString("root"), crt.SerialNumber)
 	if err != nil {
 		log.Fatalf("revoke serial %X: %v", crt.SerialNumber, err)
 	}
 }
 
 func gencrl(c *cli.Context) {
-	if err := easyca.GenCRL(c.GlobalString("root"), c.Int("expire")); err != nil {
+	if err := easypki.GenCRL(c.GlobalString("root"), c.Int("expire")); err != nil {
 		log.Fatalf("general crl: %v", err)
 	}
 }
