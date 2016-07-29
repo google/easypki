@@ -25,7 +25,7 @@ import (
 	"time"
 
 	"github.com/codegangsta/cli"
-	"github.com/jeremy-clerc/easypki/pkg/easypki"
+	"github.com/google/easypki/pkg/easypki"
 )
 
 // https://access.redhat.com/documentation/en-US/Red_Hat_Certificate_System/8.0/html/Admin_Guide/Standard_X.509_v3_Certificate_Extensions.html
