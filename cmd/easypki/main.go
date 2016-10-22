@@ -74,16 +74,18 @@ func createBundle(c *cli.Context) {
 		NotAfter: time.Now().AddDate(0, 0, c.Int("expire")),
 	}
 
-	if c.Bool("ca") {
+	intCA := c.Bool("intermediate")
+
+	if intCA || c.Bool("ca") {
 		template.IsCA = true
-		filename = "ca"
+
+		if !intCA {
+			filename = "ca"
+		}
 	} else if c.Bool("client") {
-		template.ExtKeyUsage = append(template.ExtKeyUsage, x509.ExtKeyUsageClientAuth)
 		template.EmailAddresses = c.StringSlice("email")
 	} else {
 		// We default to server
-		template.ExtKeyUsage = append(template.ExtKeyUsage, x509.ExtKeyUsageServerAuth)
-
 		IPs := make([]net.IP, 0, len(c.StringSlice("ip")))
 		for _, ipStr := range c.StringSlice("ip") {
 			if i := net.ParseIP(ipStr); i != nil {
@@ -93,7 +95,14 @@ func createBundle(c *cli.Context) {
 		template.IPAddresses = IPs
 		template.DNSNames = c.StringSlice("dns")
 	}
-	err := easypki.GenerateCertifcate(c.GlobalString("root"), filename, template)
+	err := easypki.GenerateCertificate(&easypki.GenerationRequest{
+		PKIRoot:             c.GlobalString("root"),
+		Name:                filename,
+		Template:            template,
+		MaxPathLen:          c.Int("max-path-len"),
+		IsIntermediateCA:    intCA,
+		IsClientCertificate: c.Bool("client"),
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -169,6 +178,15 @@ func parseArgs() {
 				cli.BoolFlag{
 					Name:  "ca",
 					Usage: "certificate authority",
+				},
+				cli.BoolFlag{
+					Name:  "intermediate",
+					Usage: "intermediate certificate authority; implies --ca",
+				},
+				cli.IntFlag{
+					Name:  "max-path-len",
+					Usage: "intermediate maximum path length",
+					Value: -1, // default to less-than 0 when not defined
 				},
 				cli.BoolFlag{
 					Name:  "client",
