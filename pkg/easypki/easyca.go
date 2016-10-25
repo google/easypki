@@ -67,7 +67,7 @@ func GeneratePrivateKey(path string) (*rsa.PrivateKey, error) {
 }
 
 // GenerationRequest is a struct for providing configuration to
-// GenerateCertifcate when actioning a certification generation request.
+// GenerateCertificate when actioning a certification generation request.
 type GenerationRequest struct {
 	PKIRoot             string
 	Name                string
@@ -120,7 +120,7 @@ func GenerateCertificate(genReq *GenerationRequest) error {
 			return fmt.Errorf("failed to generate ca serial number: %s", err)
 		}
 		genReq.Template.SerialNumber = serialNumber
-		genReq.Template.KeyUsage = x509.KeyUsageCertSign | x509.KeyUsageCRLSign
+		genReq.Template.KeyUsage = x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign | x509.KeyUsageCRLSign
 		genReq.Template.BasicConstraintsValid = true
 		genReq.Template.Issuer = genReq.Template.Subject
 		genReq.Template.AuthorityKeyId = genReq.Template.SubjectKeyId
@@ -131,10 +131,10 @@ func GenerateCertificate(genReq *GenerationRequest) error {
 			genReq.Template.MaxPathLenZero = true // doesn't force to zero
 		}
 
-		// Go performs validation not according to spec but according to the Windows
-		// Crypto API, so we add all usages to CA certs
-		// - https://github.com/hashicorp/vault/pull/852
-		genReq.Template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageAny}
+		genReq.Template.ExtKeyUsage = []x509.ExtKeyUsage{
+			x509.ExtKeyUsageClientAuth,
+			x509.ExtKeyUsageServerAuth,
+		}
 
 		caCrt = genReq.Template
 		caKey = privateKey
