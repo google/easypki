@@ -66,22 +66,36 @@ func GeneratePrivateKey(path string) (*rsa.PrivateKey, error) {
 	return key, nil
 }
 
-func GenerateCertifcate(pkiroot, name string, template *x509.Certificate) error {
+// GenerationRequest is a struct for providing configuration to
+// GenerateCertificate when actioning a certification generation request.
+type GenerationRequest struct {
+	PKIRoot             string
+	Name                string
+	Template            *x509.Certificate
+	MaxPathLen          int
+	IsIntermediateCA    bool
+	IsClientCertificate bool
+}
+
+// GenerateCertificate is a function for helping to generate new x509
+// certificates and keys from the GenerationRequest. This function renders the
+// content out to the filesystem.
+func GenerateCertificate(genReq *GenerationRequest) error {
 	// TODO(jclerc): check that pki has been init
 
 	var crtPath string
-	privateKeyPath := filepath.Join(pkiroot, "private", name+".key")
-	if name == "ca" {
-		crtPath = filepath.Join(pkiroot, name+".crt")
+	privateKeyPath := filepath.Join(genReq.PKIRoot, "private", genReq.Name+".key")
+	if genReq.Name == "ca" {
+		crtPath = filepath.Join(genReq.PKIRoot, genReq.Name+".crt")
 	} else {
-		crtPath = filepath.Join(pkiroot, "issued", name+".crt")
+		crtPath = filepath.Join(genReq.PKIRoot, "issued", genReq.Name+".crt")
 	}
 
 	var caCrt *x509.Certificate
 	var caKey *rsa.PrivateKey
 
 	if _, err := os.Stat(privateKeyPath); err == nil {
-		return fmt.Errorf("a key pair for %v already exists", name)
+		return fmt.Errorf("a key pair for %v already exists", genReq.Name)
 	}
 
 	privateKey, err := GeneratePrivateKey(privateKeyPath)
@@ -94,39 +108,77 @@ func GenerateCertifcate(pkiroot, name string, template *x509.Certificate) error 
 		return fmt.Errorf("marshal public key: %v", err)
 	}
 	subjectKeyId := sha1.Sum(publicKeyBytes)
-	template.SubjectKeyId = subjectKeyId[:]
+	genReq.Template.SubjectKeyId = subjectKeyId[:]
 
-	template.NotBefore = time.Now()
-	template.SignatureAlgorithm = x509.SHA256WithRSA
-	if template.IsCA {
+	genReq.Template.NotBefore = time.Now()
+	genReq.Template.SignatureAlgorithm = x509.SHA256WithRSA
+
+	// Non-intermediate Certificate Authority
+	if genReq.Template.IsCA && !genReq.IsIntermediateCA {
+		// Random Serial
 		serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
 		serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
 		if err != nil {
 			return fmt.Errorf("failed to generate ca serial number: %s", err)
 		}
-		template.SerialNumber = serialNumber
-		template.KeyUsage = x509.KeyUsageCertSign | x509.KeyUsageCRLSign
-		template.BasicConstraintsValid = true
-		template.Issuer = template.Subject
-		template.AuthorityKeyId = template.SubjectKeyId
+		genReq.Template.SerialNumber = serialNumber
 
-		caCrt = template
+		// Root certificate can self-sign
+		genReq.Template.Issuer = genReq.Template.Subject
+		genReq.Template.AuthorityKeyId = genReq.Template.SubjectKeyId
+
+		// Use the generated certificate template and private key (self-signing)
+		caCrt = genReq.Template
 		caKey = privateKey
-	} else {
-		template.KeyUsage = x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment
-		serialNumber, err := NextNumber(pkiroot, "serial")
+	}
+
+	// Intermediate-only Certificate Authority
+	if genReq.Template.IsCA && genReq.IsIntermediateCA {
+		genReq.Template.ExtKeyUsage = []x509.ExtKeyUsage{
+			x509.ExtKeyUsageClientAuth,
+			x509.ExtKeyUsageServerAuth,
+		}
+	}
+
+	// Either type of Certificate Authority (intermediate, root, etc.)
+	if genReq.Template.IsCA || genReq.IsIntermediateCA {
+		genReq.Template.KeyUsage = x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign | x509.KeyUsageCRLSign
+		genReq.Template.BasicConstraintsValid = true
+
+		// Enforce Maximum Path Length
+		if genReq.MaxPathLen >= 0 {
+			genReq.Template.MaxPathLen = genReq.MaxPathLen
+			genReq.Template.MaxPathLenZero = true // doesn't force to zero
+		}
+	}
+
+	// Any leaf: intermediate CAs, client/server certificates, signed by a root
+	if !genReq.Template.IsCA || genReq.IsIntermediateCA {
+		serialNumber, err := NextNumber(genReq.PKIRoot, "serial")
 		if err != nil {
 			return fmt.Errorf("get next serial: %v", err)
 		}
-		template.SerialNumber = serialNumber
+		genReq.Template.SerialNumber = serialNumber
 
-		caCrt, caKey, err = GetCA(pkiroot)
+		caCrt, caKey, err = GetCA(genReq.PKIRoot)
 		if err != nil {
 			return fmt.Errorf("get ca: %v", err)
 		}
 	}
 
-	crt, err := x509.CreateCertificate(rand.Reader, template, caCrt, privateKey.Public(), caKey)
+	// Should cover only client/server (All non-CA, i.e. doesn't include intermediates)
+	if !genReq.Template.IsCA {
+		if !genReq.IsClientCertificate {
+			genReq.Template.ExtKeyUsage = append(genReq.Template.ExtKeyUsage, x509.ExtKeyUsageServerAuth)
+		}
+		// Clients can only use ClientAuth
+		genReq.Template.ExtKeyUsage = append(genReq.Template.ExtKeyUsage, x509.ExtKeyUsageClientAuth)
+
+		// set the usage for non-CA certificates
+		genReq.Template.KeyUsage = x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment
+	}
+
+	crt, err := x509.CreateCertificate(rand.Reader, genReq.Template, caCrt, privateKey.Public(), caKey)
 	if err != nil {
 		return fmt.Errorf("create certificate: %v", err)
 	}
@@ -146,8 +198,8 @@ func GenerateCertifcate(pkiroot, name string, template *x509.Certificate) error 
 	}
 
 	// I do not think we have to write the ca.crt in the index
-	if !template.IsCA {
-		WriteIndex(pkiroot, name, template)
+	if !genReq.Template.IsCA {
+		WriteIndex(genReq.PKIRoot, genReq.Name, genReq.Template)
 		if err != nil {
 			return fmt.Errorf("write index: %v", err)
 		}
