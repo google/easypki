@@ -113,48 +113,47 @@ func GenerateCertificate(genReq *GenerationRequest) error {
 	genReq.Template.NotBefore = time.Now()
 	genReq.Template.SignatureAlgorithm = x509.SHA256WithRSA
 
-	if genReq.Template.IsCA {
+	// Non-intermediate Certificate Authority
+	if genReq.Template.IsCA && !genReq.IsIntermediateCA {
+		// Random Serial
 		serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
 		serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
 		if err != nil {
 			return fmt.Errorf("failed to generate ca serial number: %s", err)
 		}
 		genReq.Template.SerialNumber = serialNumber
-		genReq.Template.KeyUsage = x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign | x509.KeyUsageCRLSign
-		genReq.Template.BasicConstraintsValid = true
+
+		// Root certificate can self-sign
 		genReq.Template.Issuer = genReq.Template.Subject
 		genReq.Template.AuthorityKeyId = genReq.Template.SubjectKeyId
 
-		// if the maximum path length was provided be sure to enforce it
-		if genReq.MaxPathLen >= 0 {
-			genReq.Template.MaxPathLen = genReq.MaxPathLen
-			genReq.Template.MaxPathLenZero = true // doesn't force to zero
-		}
-
-		genReq.Template.ExtKeyUsage = []x509.ExtKeyUsage{
-			x509.ExtKeyUsageClientAuth,
-			x509.ExtKeyUsageServerAuth,
-		}
-
+		// Use the generated certificate template and private key (self-signing)
 		caCrt = genReq.Template
 		caKey = privateKey
 	}
 
-	// if this is not a CA certificate...
-	// or if this is an intermediate certificate...
-	// we want to sign it with our parent CA's key
-	if !genReq.Template.IsCA || genReq.IsIntermediateCA {
-		if !genReq.IsIntermediateCA {
-			// set the usage for non-CA certificates
-			genReq.Template.KeyUsage = x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment
-			genReq.Template.ExtKeyUsage = append(genReq.Template.ExtKeyUsage, x509.ExtKeyUsageClientAuth)
-
-			// set UsageServerAuth only if this isn't a client cert
-			if !genReq.IsClientCertificate {
-				genReq.Template.ExtKeyUsage = append(genReq.Template.ExtKeyUsage, x509.ExtKeyUsageServerAuth)
-			}
+	// Intermediate-only Certificate Authority
+	if genReq.Template.IsCA && genReq.IsIntermediateCA {
+		genReq.Template.ExtKeyUsage = []x509.ExtKeyUsage{
+			x509.ExtKeyUsageClientAuth,
+			x509.ExtKeyUsageServerAuth,
 		}
+	}
 
+	// Either type of Certificate Authority (intermediate, root, etc.)
+	if genReq.Template.IsCA || genReq.IsIntermediateCA {
+		genReq.Template.KeyUsage = x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign | x509.KeyUsageCRLSign
+		genReq.Template.BasicConstraintsValid = true
+
+		// Enforce Maximum Path Length
+		if genReq.MaxPathLen >= 0 {
+			genReq.Template.MaxPathLen = genReq.MaxPathLen
+			genReq.Template.MaxPathLenZero = true // doesn't force to zero
+		}
+	}
+
+	// Any leaf: intermediate CAs, client/server certificates, signed by a root
+	if !genReq.Template.IsCA || genReq.IsIntermediateCA {
 		serialNumber, err := NextNumber(genReq.PKIRoot, "serial")
 		if err != nil {
 			return fmt.Errorf("get next serial: %v", err)
@@ -165,6 +164,18 @@ func GenerateCertificate(genReq *GenerationRequest) error {
 		if err != nil {
 			return fmt.Errorf("get ca: %v", err)
 		}
+	}
+
+	// Should cover only client/server (All non-CA, i.e. doesn't include intermediates)
+	if !genReq.Template.IsCA {
+		if !genReq.IsClientCertificate {
+			genReq.Template.ExtKeyUsage = append(genReq.Template.ExtKeyUsage, x509.ExtKeyUsageServerAuth)
+		}
+		// Clients can only use ClientAuth
+		genReq.Template.ExtKeyUsage = append(genReq.Template.ExtKeyUsage, x509.ExtKeyUsageClientAuth)
+
+		// set the usage for non-CA certificates
+		genReq.Template.KeyUsage = x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment
 	}
 
 	crt, err := x509.CreateCertificate(rand.Reader, genReq.Template, caCrt, privateKey.Public(), caKey)
