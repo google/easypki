@@ -135,7 +135,7 @@ func parseArgs() {
 	app.Usage = "Manage pki"
 	app.Author = "Jeremy Clerc"
 	app.Email = "jeremy@clerc.io"
-	app.Version = "0.0.1"
+	app.Version = "0.1.1"
 
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
