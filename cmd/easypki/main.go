@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Command easypki provides a simple client to manage a local PKI.
 package main
 
 import (
@@ -20,25 +21,28 @@ import (
 	"log"
 	"net"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"encoding/pem"
+
 	"github.com/codegangsta/cli"
+	"github.com/google/easypki/pkg/certificate"
 	"github.com/google/easypki/pkg/easypki"
+	"github.com/google/easypki/pkg/store"
 )
 
-// https://access.redhat.com/documentation/en-US/Red_Hat_Certificate_System/8.0/html/Admin_Guide/Standard_X.509_v3_Certificate_Extensions.html
-// B.3.8. keyUsage
+const (
+	defaultCAName = "ca"
+)
 
-func initPki(c *cli.Context) {
-	log.Print("generating new pki structure")
-	if err := easypki.GeneratePKIStructure(c.GlobalString("root")); err != nil {
-		log.Fatalf("generate pki structure: %v", err)
-	}
+type router struct {
+	PKI *easypki.EasyPKI
 }
 
-func createBundle(c *cli.Context) {
+func (r *router) create(c *cli.Context) {
 	if !c.Args().Present() {
 		cli.ShowSubcommandHelp(c)
 		log.Fatalf("Usage: %v name (common name defaults to name, use --cn and "+
@@ -53,35 +57,41 @@ func createBundle(c *cli.Context) {
 	}
 
 	subject := pkix.Name{CommonName: commonName}
-	if str := c.String("organization"); len(str) > 0 {
+	if str := c.String("organization"); str != "" {
 		subject.Organization = []string{str}
 	}
-	if str := c.String("locality"); len(str) > 0 {
+	if str := c.String("locality"); str != "" {
 		subject.Locality = []string{str}
 	}
-	if str := c.String("country"); len(str) > 0 {
+	if str := c.String("country"); str != "" {
 		subject.Country = []string{str}
 	}
-	if str := c.String("province"); len(str) > 0 {
+	if str := c.String("province"); str != "" {
 		subject.Province = []string{str}
 	}
-	if str := c.String("organizational-unit"); len(str) > 0 {
+	if str := c.String("organizational-unit"); str != "" {
 		subject.OrganizationalUnit = []string{str}
 	}
 
 	template := &x509.Certificate{
-		Subject:  subject,
-		NotAfter: time.Now().AddDate(0, 0, c.Int("expire")),
+		Subject:    subject,
+		NotAfter:   time.Now().AddDate(0, 0, c.Int("expire")),
+		MaxPathLen: c.Int("max-path-len"),
 	}
 
-	intCA := c.Bool("intermediate")
-
-	if intCA || c.Bool("ca") {
-		template.IsCA = true
-
-		if !intCA {
-			filename = "ca"
+	var signer *certificate.Bundle
+	isRootCa := c.Bool("ca")
+	if !isRootCa {
+		var err error
+		signer, err = r.PKI.GetCA(c.String("ca-name"))
+		if err != nil {
+			log.Fatal(err)
 		}
+	}
+
+	isIntCA := c.Bool("intermediate")
+	if isIntCA || isRootCa {
+		template.IsCA = true
 	} else if c.Bool("client") {
 		template.EmailAddresses = c.StringSlice("email")
 	} else {
@@ -95,85 +105,102 @@ func createBundle(c *cli.Context) {
 		template.IPAddresses = IPs
 		template.DNSNames = c.StringSlice("dns")
 	}
-	err := easypki.GenerateCertificate(&easypki.GenerationRequest{
-		PKIRoot:             c.GlobalString("root"),
+
+	req := &easypki.Request{
 		Name:                filename,
 		Template:            template,
-		MaxPathLen:          c.Int("max-path-len"),
-		IsIntermediateCA:    intCA,
 		IsClientCertificate: c.Bool("client"),
-	})
-	if err != nil {
+		PrivateKeySize:      c.Int("private-key-size"),
+	}
+	if err := r.PKI.Sign(signer, req); err != nil {
 		log.Fatal(err)
 	}
 }
-func revoke(c *cli.Context) {
+
+func (r *router) revoke(c *cli.Context) {
 	if !c.Args().Present() {
 		cli.ShowSubcommandHelp(c)
 		log.Fatalf("Usage: %v path/to/cert.crt", c.Command.FullName())
 	}
-	crtPath := c.Args().First()
-	crt, err := easypki.GetCertificate(crtPath)
-	if err != nil {
-		log.Fatalf("get certificate (%v): %v", crtPath, err)
-	}
-	err = easypki.RevokeSerial(c.GlobalString("root"), crt.SerialNumber)
-	if err != nil {
-		log.Fatalf("revoke serial %X: %v", crt.SerialNumber, err)
+
+	for _, p := range c.Args() {
+		name := strings.TrimSuffix(path.Base(p), ".crt")
+		ca := path.Base(strings.TrimSuffix(path.Dir(p), store.LocalCertsDir))
+		bundle, err := r.PKI.GetBundle(ca, name)
+		if err != nil {
+			log.Fatalf("Failed fetching certificate %v under CA %v: %v", name, ca, err)
+		}
+		err = r.PKI.Revoke(ca, bundle.Cert)
+		if err != nil {
+			log.Fatalf("Failed revoking certificate %v under CA %v: %v", name, ca, err)
+		}
 	}
 }
 
-func gencrl(c *cli.Context) {
-	if err := easypki.GenCRL(c.GlobalString("root"), c.Int("expire")); err != nil {
-		log.Fatalf("general crl: %v", err)
+func (r *router) crl(c *cli.Context) {
+	ca := c.String("ca-name")
+	crl, err := r.PKI.CRL(ca, time.Now().AddDate(0, 0, c.Int("expire")))
+	if err != nil {
+		log.Fatalf("Failed generating CRL for CA %v: %v", ca, err)
+	}
+	err = pem.Encode(os.Stdout, &pem.Block{
+		Type:  "X509 CRL",
+		Bytes: crl,
+	})
+	if err != nil {
+		log.Fatalf("Failed writing PEM formated CRL to stdout: %v", err)
 	}
 }
 
-func parseArgs() {
+func (r *router) run() {
 	app := cli.NewApp()
 	app.Name = "easypki"
 	app.Usage = "Manage pki"
 	app.Author = "Jeremy Clerc"
 	app.Email = "jeremy@clerc.io"
-	app.Version = "0.1.1"
+	app.Version = "0.2.0"
 
+	caNameFlag := cli.StringFlag{
+		Name:  "ca-name",
+		Usage: "Specify a different CA name to use an intermediate CA.",
+		Value: defaultCAName,
+	}
+
+	local := r.PKI.Store.(*store.Local)
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
-			Name:   "root",
-			Value:  filepath.Join(os.Getenv("PWD"), "pki_auto_generated_dir"),
-			Usage:  "path to pki root directory",
-			EnvVar: "PKI_ROOT",
+			Name:        "root",
+			Value:       filepath.Join(os.Getenv("PWD"), "pki_auto_generated_dir"),
+			Usage:       "path to pki root directory",
+			EnvVar:      "PKI_ROOT",
+			Destination: &local.Root,
 		},
 	}
 	app.Commands = []cli.Command{
 		{
-			Name:        "init",
-			Description: "create directory structure",
-			Action:      initPki,
-		},
-		{
 			Name:        "revoke",
-			Usage:       "revoke path/to/cert",
-			Description: "revoke certificate",
-			Action:      revoke,
+			Usage:       "revoke path/to/ca-name/certs/cert path/to/ca-name/certs/cert2",
+			Description: "Revoke the given certificates",
+			Action:      r.revoke,
 		},
 		{
-			Name:        "gencrl",
+			Name:        "crl",
 			Description: "generate certificate revocation list",
-			Action:      gencrl,
+			Action:      r.crl,
 			Flags: []cli.Flag{
 				cli.IntFlag{
 					Name:  "expire",
 					Usage: "expiration limit in days",
-					Value: 30,
+					Value: 7,
 				},
+				caNameFlag,
 			},
 		},
 		{
 			Name:        "create",
 			Usage:       "create COMMON NAME",
 			Description: "create private key + cert signed by CA",
-			Action:      createBundle,
+			Action:      r.create,
 			Flags: []cli.Flag{
 				cli.BoolFlag{
 					Name:  "ca",
@@ -183,6 +210,7 @@ func parseArgs() {
 					Name:  "intermediate",
 					Usage: "intermediate certificate authority; implies --ca",
 				},
+				caNameFlag,
 				cli.IntFlag{
 					Name:  "max-path-len",
 					Usage: "intermediate maximum path length",
@@ -196,6 +224,11 @@ func parseArgs() {
 					Name:  "expire",
 					Usage: "expiration limit in days",
 					Value: 365,
+				},
+				cli.IntFlag{
+					Name:  "private-key-size",
+					Usage: "size of the private key (default: 2048)",
+					Value: 2048,
 				},
 				cli.StringFlag{
 					Name:  "filename",
@@ -243,5 +276,6 @@ func parseArgs() {
 }
 
 func main() {
-	parseArgs()
+	r := router{PKI: &easypki.EasyPKI{Store: &store.Local{}}}
+	r.run()
 }

@@ -56,6 +56,26 @@ For more info about available flags, checkout out the help `-h`
 
 You will find the generated cert in `issued` and private key in `private`
 
+# API
+
+For the latest API:
+
+```
+import "gopkg.in/google/easypki.v1"
+```
+
+## Legacy API
+
+API below pkg/ has been rewritten to allow extensibility in terms of PKI
+storage and better readability.
+
+If you used the legacy API that was only writing files to disk, a tag has been
+applied so you can still import it:
+
+```
+import "gopkg.in/google/easypki.v0"
+```
+
 # Disclaimer
 
 This is not an official Google product
