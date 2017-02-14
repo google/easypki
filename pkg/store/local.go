@@ -59,8 +59,8 @@ type Local struct {
 }
 
 // path returns private and public key path.
-func (l *Local) path(caName, name string) (priv string, cert string) {
-	priv = filepath.Join(l.Root, caName, LocalKeysDir, name+".key")
+func (l *Local) path(caName, name string) (key string, cert string) {
+	key = filepath.Join(l.Root, caName, LocalKeysDir, name+".key")
 	cert = filepath.Join(l.Root, caName, LocalCertsDir, name+".crt")
 	return
 }
