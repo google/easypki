@@ -19,23 +19,43 @@ import (
 	"crypto/x509/pkix"
 	"io/ioutil"
 	"net"
+	"os"
 	"testing"
 	"time"
 
-	"reflect"
-
+	"github.com/boltdb/bolt"
 	"github.com/google/easypki/pkg/store"
+
+	"reflect"
 )
 
-func TestE2E(t *testing.T) {
+func TestLocalE2E(t *testing.T) {
 	root, err := ioutil.TempDir("", "testeasypki")
 	if err != nil {
 		t.Fatalf("failed creating temporary directory: %v", err)
 	}
-	//defer os.RemoveAll(root)
+	defer os.RemoveAll(root)
 
-	pki := &EasyPKI{Store: &store.Local{Root: root}}
+	E2E(t, &EasyPKI{Store: &store.Local{Root: root}})
+}
 
+func TestBoltE2E(t *testing.T) {
+	f, err := ioutil.TempFile("", "boltdb")
+	if err != nil {
+		t.Fatalf("failed creating tempfile for boltdb: %v", err)
+	}
+	defer os.Remove(f.Name())
+	db, err := bolt.Open(f.Name(), 0600, nil)
+	if err != nil {
+		t.Fatalf("failed opening temp boltdb: %v", err)
+	}
+	defer db.Close()
+	E2E(t, &EasyPKI{Store: &store.Bolt{DB: db}})
+}
+
+// E2E provides a frameweork to run tests end to end using a different
+// store backend.
+func E2E(t *testing.T, pki *EasyPKI) {
 	commonSubject := pkix.Name{
 		Organization:       []string{"Acme Inc."},
 		OrganizationalUnit: []string{"IT"},
