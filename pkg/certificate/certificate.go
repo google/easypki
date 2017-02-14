@@ -38,11 +38,11 @@ func (b *Bundle) Raw() ([]byte, []byte) {
 func RawToBundle(name string, key []byte, cert []byte) (*Bundle, error) {
 	k, err := x509.ParsePKCS1PrivateKey(key)
 	if err != nil {
-		return nil, fmt.Errorf("failed parsing private key from PEM bytes: %v", err)
+		return nil, fmt.Errorf("failed parsing private key: %v", err)
 	}
 	c, err := x509.ParseCertificate(cert)
 	if err != nil {
-		return nil, fmt.Errorf("failed parsing certificate from PEM bytes: %v", err)
+		return nil, fmt.Errorf("failed parsing certificate: %v", err)
 	}
 	return &Bundle{Name: name, Key: k, Cert: c}, nil
 }
