@@ -355,29 +355,30 @@ func InitCADir(path string) error {
 		{Name: "index.txt.attr", Content: "unique_subject = no"},
 	}
 	for _, f := range files {
-		err := func(path, content string) error {
-			fh, err := os.Create(path)
-			if err != nil {
-				return fmt.Errorf("failed creating file  %v: %v", path, err)
-			}
-			defer fh.Close()
-
-			if content == "" {
-				return nil
-			}
-
-			n, err := fmt.Fprintln(fh, content)
-			if err != nil {
-				return fmt.Errorf("failed wrinting %v in %v: %v", content, path, err)
-			}
-			if n == 0 {
-				return fmt.Errorf("failed writing %v in %v: 0 bytes written", content, path)
-			}
-			return nil
-		}(filepath.Join(path, f.Name), f.Content)
-		if err != nil {
+		if err := createFile(filepath.Join(path, f.Name), f.Content); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func createFile(path, content string) error {
+	fh, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("failed creating file  %v: %v", path, err)
+	}
+	defer fh.Close()
+
+	if content == "" {
+		return nil
+	}
+
+	n, err := fmt.Fprintln(fh, content)
+	if err != nil {
+		return fmt.Errorf("failed wrinting %v in %v: %v", content, path, err)
+	}
+	if n == 0 {
+		return fmt.Errorf("failed writing %v in %v: 0 bytes written", content, path)
 	}
 	return nil
 }
