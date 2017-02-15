@@ -7,14 +7,14 @@ having a trusted certificate.
 Build the PKI from the yaml definition:
 
 ```
-go run build-pki.go -config_path pki.yaml -db_path pki.boltdb
+go run client-auth.go -config_path pki.yaml -db_path pki.boltdb
 ```
 
 Fetch the certificates needed for nginx:
 
 ```
-go run get.go -db_path pki.boltdb -ca_name "Admins Intermediate CA" -bundle_name "localhost"
-go run get.go -db_path pki.boltdb -bundle_name "Admins Intermediate CA"
+go run client-auth.go -db_path pki.boltdb -ca_name "Admins Intermediate CA" -bundle_name "localhost"
+go run client-auth.go -db_path pki.boltdb -bundle_name "Admins Intermediate CA"
 ```
 
 Create the nginx config structure:
@@ -32,7 +32,7 @@ golang.org/x/crypto/pkcs12 only provides decoding, so we use openssl.
 Fetch the client certificate and create a pkcs12 formatted file:
 
 ```
-go run get.go -db_path pki.boltdb -ca_name "Admins Intermediate CA" -bundle_name bob@acme.com -full_chain=false
+go run client-auth.go -db_path pki.boltdb -ca_name "Admins Intermediate CA" -bundle_name bob@acme.com -full_chain=false
 cat bob@acme.com.{key,crt} | openssl pkcs12 -export -out bob@acme.com+pkcs12.crt
 ```
 
@@ -41,7 +41,7 @@ Import bob@acme.com+pkcs12.crt in your favorite browser.
 Fetch the root CA to import in the browser:
 
 ```
-go run get.go -db_path pki.boltdb -bundle_name "CA"
+go run client-auth.go -db_path pki.boltdb -bundle_name "CA"
 ```
 
 Import CA+chain.crt in your favorite browser.
