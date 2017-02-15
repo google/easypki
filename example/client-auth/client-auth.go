@@ -1,16 +1,14 @@
 package main
 
 import (
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/pem"
 	"flag"
 	"io/ioutil"
 	"log"
-	"time"
-
 	"os"
-
-	"crypto/x509"
-	"crypto/x509/pkix"
+	"time"
 
 	"github.com/boltdb/bolt"
 	"github.com/go-yaml/yaml"

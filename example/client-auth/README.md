@@ -52,8 +52,8 @@ Run nginx:
 docker run --rm -v $PWD/conf.d:/etc/nginx/conf.d -p 8080:443  nginx
 ```
 
-Open you browser at https://localhost:8080, and you should see "Welcome to
-nginx!".
+Open you browser at [https://localhost:8080](https://localhost:8080),
+and you should see "Welcome to nginx!".
 
 Try to remove your client certificate from your browser and you get 400 bad
 request.
