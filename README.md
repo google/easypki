@@ -1,67 +1,17 @@
 [![Build
 Status](https://travis-ci.org/google/easypki.svg?branch=master)](https://travis-ci.org/google/easypki)
 [![codecov](https://codecov.io/gh/google/easypki/branch/master/graph/badge.svg)](https://codecov.io/gh/google/easypki)
-[![godoc](https://godoc.org/github.com/google/easypki?status.svg)](https://godoc.org/github.com/google/easypki)
 
 easypki
 ======
 
-Easypki attempts to make managing a Certificate Authority very easy.
-Serial, index, etc, are formatted in a way to be compatible with openssl,
-so you can use openssl for commands not implemented by easypki.
-
-# Usage
-
-Easypki usage is straighforward:
-
-1. Init the directory you will use
-2. Create the CA
-3. Create certificates
-
-Create an env.sh that you can source later (or add to your .bashrc)
-
-```
-export PKI_ROOT=/tmp/pki
-export PKI_ORGANIZATION="Umbrella Corp"
-export PKI_ORGANIZATIONAL_UNIT=IT
-export PKI_COUNTRY=US
-export PKI_LOCALITY="Agloe"
-export PKI_PROVINCE="New York"
-```
-
-Before being able to create you certificates, you need to `init` the root directory.
-It creates files and directories required by easypki.
-
-```
-mkdir $PKI_ROOT
-easypki init
-```
-
-Args passed to create make the Common Name, here: "Umbrella Corp Global Authority"
-
-```
-easypki create --ca Umbrella Corp Global Authority
-```
-
-Then you can choose between server and client certificate, by default server is implied, to generate a client certificate add `--client`
-
-Generate a wildcard certificate for your web apps:
-
-```
-easypki create --dns "*.umbrella.com" *.umbrella.com
-```
-
-Another example, a certificate for wiki and www:
-
-```
-easypki create --dns "www.umbrella.com" --dns "wiki.umbrella.com"  www.umbrella.com
-```
-
-For more info about available flags, checkout out the help `-h`
-
-You will find the generated cert in `issued` and private key in `private`
+Easy Public Key Infrastructure intends to provide most of the components needed
+to manage a PKI, so you can either use the API in your automation, or use the
+CLI.
 
 # API
+
+[![godoc](https://godoc.org/github.com/google/easypki?status.svg)](https://godoc.org/github.com/google/easypki)
 
 For the latest API:
 
@@ -81,6 +31,56 @@ applied so you can still import it:
 import "gopkg.in/google/easypki.v0"
 ```
 
+# CLI
+
+Current implementation of the CLI uses the local store and uses a structure
+compatible with openssl, so you are not restrained.
+
+```
+# Get the CLI:
+go get github.com/google/easypki/cmd/easypki
+
+
+# You can also pass the following through arguments if you do not want to use
+# env variables.
+export PKI_ROOT=/tmp/pki
+export PKI_ORGANIZATION="Acme Inc."
+export PKI_ORGANIZATIONAL_UNIT=IT
+export PKI_COUNTRY=US
+export PKI_LOCALITY="Agloe"
+export PKI_PROVINCE="New York"
+
+mkdir $PKI_ROOT
+
+# Create the root CA:
+easypki create --filename root --ca "Acme Inc. Certificate Authority"
+
+# In the following commands, ca-name corresponds to the filename containing
+# the CA.
+
+# Create a server certificate for blog.acme.com and www.acme.com:
+easypki create --ca-name root --dns blog.acme.com --dns www.acme.com www.acme.com
+
+# Create an intermediate CA:
+easypki create --ca-name root --filename intermediate --intermediate "Acme Inc. - Internal CA"
+
+# Create a wildcard certificate for internal use, signed by the intermediate ca:
+easypki create --ca-name intermediate --dns "*.internal.acme.com" "*.internal.acme.com"
+
+# Create a client certificate:
+easypki create --ca-name intermediate --client --email bob@acme.com bob@acme.com
+
+# Revoke the www certificate.
+easypki revoke $PKI_ROOT/root/certs/www.acme.com.crt
+
+# Generate a CRL expiring in 1 day (PEM Output on stdout):
+easypki crl --ca-name root --expire 1
+```
+You will find the generated certificates in `$PKI_ROOT/ca_name/certs/` and
+private keys in `$PKI_ROOT/ca_name/keys/`
+
+For more info about available flags, checkout out the help `easypki -h`.
+
 # Disclaimer
 
-This is not an official Google product
+This is not an official Google product.
