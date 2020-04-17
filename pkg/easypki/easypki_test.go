@@ -23,8 +23,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/boltdb/bolt"
 	"github.com/google/easypki/pkg/store"
+	bolt "go.etcd.io/bbolt"
 
 	"reflect"
 )
