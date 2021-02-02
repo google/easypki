@@ -48,7 +48,7 @@ var (
 	// 4 Serial
 	// 5 Filename
 	// 6 Subject
-	indexRegexp = regexp.MustCompile("^(V|R|E)\t([0-9]{12}Z)\t([0-9]{12}Z)?\t([0-9a-fA-F]{2,})\t([^\t]+)\t(.+)")
+	indexRegexp = regexp.MustCompile("^([VRE])\t([0-9]{12}Z)\t([0-9]{12}Z)?\t([0-9a-fA-F]{2,})\t([^\t]+)\t(.+)")
 )
 
 // Local lets us store a Certificate Authority on the local filesystem.

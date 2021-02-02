@@ -22,8 +22,8 @@ import (
 
 	"fmt"
 
-	"github.com/boltdb/bolt"
 	"github.com/google/easypki/pkg/certificate"
+	bolt "go.etcd.io/bbolt"
 )
 
 var (
