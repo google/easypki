@@ -1,13 +1,12 @@
 language: go
 sudo: false
 go:
-  - 1.x
-
-before_install:
-  - go get -t -v ./...
+  - '1.13.x'
+  - '1.14.x'
 
 script:
   - ./test.sh
+   - go build -v -o build/easypki ./cmd/easypki
 
 after_success:
   - bash <(curl -s https://codecov.io/bash)
