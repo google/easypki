@@ -28,7 +28,7 @@ import (
 
 	"encoding/pem"
 
-	"github.com/codegangsta/cli"
+	"github.com/urfave/cli"
 	"github.com/google/easypki/pkg/certificate"
 	"github.com/google/easypki/pkg/easypki"
 	"github.com/google/easypki/pkg/store"
